@@ -3,17 +3,22 @@ import time
 import re
 from datetime import datetime
 from slack_bolt import App
-from slack_bolt.adapter.socket_mode import SocketModeHandler
+from slack_bolt.adapter.flask import SlackRequestHandler
 import gspread
 from google.oauth2.service_account import Credentials
 from fuzzywuzzy import fuzz
 import json
+from flask import Flask, request
 
 # Initialize Slack app
 app = App(
     token=os.environ.get("SLACK_BOT_TOKEN"),
     signing_secret=os.environ.get("SLACK_SIGNING_SECRET")
 )
+
+# Initialize Flask for HTTP requests
+flask_app = Flask(__name__)
+handler = SlackRequestHandler(app)
 
 # Google Sheets setup
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
@@ -274,135 +279,4 @@ def handle_send_request(ack, body, client):
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": "Help us improve! Send your question to our team and we'll add it to the knowledge base."
-                    }
-                },
-                {
-                    "type": "input",
-                    "block_id": "question_input",
-                    "element": {
-                        "type": "plain_text_input",
-                        "action_id": "question",
-                        "initial_value": query,
-                        "multiline": True,
-                        "placeholder": {
-                            "type": "plain_text",
-                            "text": "What's your question?"
-                        }
-                    },
-                    "label": {
-                        "type": "plain_text",
-                        "text": "Your Question"
-                    }
-                },
-                {
-                    "type": "input",
-                    "block_id": "context_input",
-                    "element": {
-                        "type": "plain_text_input",
-                        "action_id": "context",
-                        "multiline": True,
-                        "placeholder": {
-                            "type": "plain_text",
-                            "text": "Any additional context that might help us answer this?"
-                        }
-                    },
-                    "label": {
-                        "type": "plain_text",
-                        "text": "Additional Context (Optional)"
-                    },
-                    "optional": True
-                }
-            ]
-        }
-    )
-
-# Handle question request submission
-@app.view("question_request_modal")
-def handle_question_request(ack, body, view, client):
-    ack()
-    
-    user_id = body["user"]["id"]
-    user_name = body["user"]["name"]
-    
-    # Extract form data
-    question = view["state"]["values"]["question_input"]["question"]["value"]
-    context = view["state"]["values"]["context_input"]["context"]["value"] or ""
-    
-    full_question = f"{question}\n\nContext: {context}" if context else question
-    
-    # Save to Google Sheets
-    if save_question_request(full_question, user_id, user_name):
-        # Send confirmation to user
-        client.chat_postMessage(
-            channel=user_id,
-            text="✅ Thanks for your request! We've received your question and will add it to our knowledge base soon."
-        )
-        
-        # Notify admin channel (optional)
-        admin_channel = os.environ.get("ADMIN_CHANNEL_ID")
-        if admin_channel:
-            client.chat_postMessage(
-                channel=admin_channel,
-                blocks=[
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"📝 *New Question Request*\n\n*From:* <@{user_id}>\n*Question:* {question}"
-                        }
-                    },
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"*Context:* {context}" if context else "*No additional context provided*"
-                        }
-                    }
-                ]
-            )
-    else:
-        client.chat_postMessage(
-            channel=user_id,
-            text="❌ Sorry, there was an error submitting your request. Please try again later or contact IT directly."
-        )
-
-# Slash command for quick queries
-@app.command("/ask")
-def handle_ask_command(ack, command, say):
-    ack()
-    
-    query = command["text"].strip()
-    if not query:
-        say("Usage: `/ask your question here`\n\nExample: `/ask Where is the printer paper?`")
-        return
-    
-    refresh_cache_if_needed()
-    result = find_best_answer(query)
-    
-    if result:
-        say(f"*{result['question']}*\n\n{result['answer']}")
-    else:
-        say(f"🤔 I couldn't find an answer to \"{query}\". Try asking me directly in a DM for more options!")
-
-# Admin refresh command
-@app.command("/refresh-kb")
-def handle_refresh_command(ack, command, say):
-    ack()
-    
-    if load_qa_data():
-        say(f"✅ Knowledge base refreshed! Loaded {len(qa_data)} questions.")
-    else:
-        say("❌ Failed to refresh knowledge base. Please check the configuration.")
-
-# Load initial data
-print("🚀 Starting Rochbot...")
-if load_qa_data():
-    print("✅ Initial data loaded successfully")
-else:
-    print("⚠️ Warning: Could not load initial data")
-
-# Start the app
-if __name__ == "__main__":
-    handler = SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])
-    handler.start()
+                        "text": "Help u
